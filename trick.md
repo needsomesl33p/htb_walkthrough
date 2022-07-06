@@ -54,7 +54,7 @@ Address: 10.10.11.166#53
 Okay, that's something. Let's add it to the `/etc/resolv.conf`:
 `nameserver 10.10.11.166`
 
-New DNS server was added to the resolve config, now we can query the DNS server. And one of the most jucy thing what a hacker can do is DNS zone transfer (AXFR). So I tried:
+New DNS server was added to the resolve config, now we can query the DNS server. And one of the most juicy thing what a hacker can do is DNS zone transfer (AXFR). So I tried:
 
 ```
 dig axfr @10.10.11.166 trick.htb
