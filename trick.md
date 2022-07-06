@@ -1,4 +1,4 @@
-## Trick
+## Trick 🔮
 `IP address: 10.10.11.166`
 
 Enumeration is the key when you come to this box. It has also a lot of rabbit holes, which could be very "tricky" and you easily get lost.
