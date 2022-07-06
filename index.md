@@ -4,4 +4,4 @@ Hi there! On this page you will find HackTheBox walkthroughs or similar hack-thr
 
 ### HackTheBox
 
-- [Trick](https://raw.githubusercontent.com/needsomesl33p/htb_walkthrough/gh-pages/trick.md)
+- [Trick](https://needsomesl33p.github.io/htb_walkthrough/trick)
