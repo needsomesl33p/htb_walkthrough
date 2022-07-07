@@ -349,7 +349,7 @@ User michael may run the following commands on trick:
     (root) NOPASSWD: /etc/init.d/fail2ban restart
 ```
 
-And here we go. Michael did not have right to execute the `systemctl` but he did have right to run `/etc/init.d/fail2ban restart`.
+And here we go. Michael did not have right to execute the `systemctl` but he did have the right to run `/etc/init.d/fail2ban restart`.
 
 So after the service restart, 5 failed SSH login attempts were made and the `bash` binary got the SUID bit:
 
