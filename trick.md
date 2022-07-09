@@ -247,17 +247,17 @@ drwxr-xr-x 2 root root      4096 Jul  7 20:54 jail.d
 
 You may notice the `action.d` folder has different group owner as the other files and dictioneries. It has a `security` group owner and michael belongs to this group. At this point it was pretty straightforward, and there are a few privesc tutorials on the internet, which described the whole rooting process. 
 
-Just a few word about the `fail2ban` service:
+Just a few words about the `fail2ban` service:
 
 *Fail2ban is an intrusion prevention software framework that protects computer servers from brute-force attacks. Fail2ban scans log files (e.g. /var/log/httpd/error_log) and bans IPs that show the malicious signs like too many password failures, seeking for exploits, etc.*
 
 
-**jail.conf** - config file. This config file describes the default banaction and individual banaction for every service.
-**bantime** - cooldown time of the ban
-**findtime** - Within this timeframe IPs are banned, which passed the *maxretry* threshold
-**maxretry** - Maxiumum login tries in the 'findtime' period
-**banaction** - The default action when a ban action was triggered
-**actoion.d** - A folder which contains the banaction config files
+- **jail.conf** - This config file describes the default banaction and individual banaction for every service.
+- **bantime** - cooldown time of the ban
+- **findtime** - Within this timeframe IPs are banned, which passed the *maxretry* threshold
+- **maxretry** - Maxiumum login tries in the 'findtime' period
+- **banaction** - The default action when a ban action was triggered
+- **actoion.d** - A folder which contains the banaction config files
 
 It also turned out from the config files the SSH service was enabled in fail2ban.
 
@@ -350,11 +350,14 @@ User michael may run the following commands on trick:
     (root) NOPASSWD: /etc/init.d/fail2ban restart
 ```
 
-And here we go. Michael did not have right to execute the `systemctl` but he did have the right to run `/etc/init.d/fail2ban restart`.
+Here we go. Michael did not have right to execute the `systemctl` but he did have the right to run `/etc/init.d/fail2ban restart`.
 
 So after the service restart, 5 failed SSH login attempts were made and the `bash` binary got the SUID bit:
 
 ```
+michael@trick:/etc/init.d$ ls -l /bin/bash
+-rwsr-sr-x 1 root root 1183448 Apr 18 09:14 /bin/bash
+michael@trick:/etc/init.d$ /bin/bash -p
 bash-5.0# whoami
 root
 ```
